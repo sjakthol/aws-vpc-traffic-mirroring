@@ -12,8 +12,8 @@ Resources:
       VpcId:
         Fn::ImportValue: infra-vpc-VpcId
       SecurityGroupIngress:
-        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 88.114.129.213/32, Description: 'Allow HTTP traffic' }
-        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 88.114.129.213/32, Description: 'Allow HTTPS traffic' }
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 0.0.0.0/0, Description: 'Allow HTTP traffic' }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 0.0.0.0/0, Description: 'Allow HTTPS traffic' }
       Tags:
         - { Key: Name, Value: !Sub '${AWS::StackName}-alb-sg' }
 
