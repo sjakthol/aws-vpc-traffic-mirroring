@@ -1,0 +1,86 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: EC2 Instance that acts as a VPC Traffic Mirroring Target
+
+Parameters:
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+
+Resources:
+  SecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupDescription: !Sub Security group for ${AWS::StackName} instance
+      GroupName: !Sub ${AWS::StackName}-sg
+      VpcId: !ImportValue infra-vpc-VpcId
+      SecurityGroupIngress:
+        - { IpProtocol: udp, FromPort: 4789, ToPort: 4789, CidrIp: !ImportValue infra-vpc-VpcIpv4Cidr, Description: 'Allow mirrored traffic from VPC' }
+      Tags:
+        - { Key: Name, Value: !Sub '${AWS::StackName}-sg' }
+
+  Role:
+    Type: "AWS::IAM::Role"
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Path: /
+      RoleName: !Sub ${AWS::StackName}-role
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+
+  RoleProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref Role
+      InstanceProfileName: !Sub '${AWS::StackName}-profile'
+
+  LaunchTemplate:
+    Type: "AWS::EC2::LaunchTemplate"
+    Properties:
+      LaunchTemplateName: !Sub ${AWS::StackName}-lt
+      LaunchTemplateData:
+        EbsOptimized: true
+        IamInstanceProfile:
+          Arn: !GetAtt RoleProfile.Arn
+        ImageId: !Ref LatestAmiId
+        InstanceMarketOptions:
+          MarketType: spot
+          SpotOptions:
+            SpotInstanceType: one-time
+        InstanceType: m5.large
+        SecurityGroupIds:
+          - !Ref SecurityGroup
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - { Key: Name, Value: !Sub '${AWS::StackName}' }
+          - ResourceType: volume
+            Tags:
+              - { Key: Name, Value: !Sub '${AWS::StackName}-volume' }
+        UserData:
+          Fn::Base64: |
+            #!/bin/bash
+            set -o xtrace
+
+            # Setup SSM for remote management
+            yum install -y amazon-ssm-agent
+            systemctl start amazon-ssm-agent
+
+            # Setup tcpdump
+            yum install -y tcpdump
+
+  Instance:
+    Type: "AWS::EC2::Instance"
+    Properties:
+      LaunchTemplate:
+        LaunchTemplateId: !Ref LaunchTemplate
+        Version: !GetAtt LaunchTemplate.LatestVersionNumber
+      SubnetId: !ImportValue infra-vpc-sn-public-a

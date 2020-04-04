@@ -1,0 +1,175 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Sample service for VPC Mirroring experiments (ALB + Fargate)
+
+Resources:
+
+  # ALB
+  AlbSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-alb-sg'
+      GroupDescription: !Sub Security group for ${AWS::StackName}-alb
+      VpcId:
+        Fn::ImportValue: infra-vpc-VpcId
+      SecurityGroupIngress:
+        - { IpProtocol: tcp, FromPort: 80, ToPort: 80, CidrIp: 88.114.129.213/32, Description: 'Allow HTTP traffic' }
+        - { IpProtocol: tcp, FromPort: 443, ToPort: 443, CidrIp: 88.114.129.213/32, Description: 'Allow HTTPS traffic' }
+      Tags:
+        - { Key: Name, Value: !Sub '${AWS::StackName}-alb-sg' }
+
+  Alb:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      IpAddressType: ipv4
+      Scheme: internet-facing
+      SecurityGroups:
+        - !GetAtt AlbSg.GroupId
+      Subnets:
+        - !ImportValue infra-vpc-sn-public-a
+        - !ImportValue infra-vpc-sn-public-b
+      Tags:
+        - { Key: Name, Value: !Sub '${AWS::StackName}-alb' }
+      Type: application
+
+  AlbHttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref TargetGroup
+      LoadBalancerArn: !Ref Alb
+      Port: 80
+      Protocol: HTTP
+
+  # AlbHttpsListener:
+  #   Type: AWS::ElasticLoadBalancingV2::Listener
+  #   Properties:
+  #     Certificates:
+  #       - CertificateArn: INSERT ARN HERE
+  #     DefaultActions:
+  #       - Type: forward
+  #         TargetGroupArn: !Ref TargetGroup
+  #     LoadBalancerArn: !Ref Alb
+  #     Port: 443
+  #     Protocol: HTTPS
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 6
+      HealthCheckPath: /
+      HealthCheckProtocol: HTTP
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      Port: 80
+      Protocol: HTTP
+      UnhealthyThresholdCount: 2
+      TargetGroupAttributes:
+        - { Key: deregistration_delay.timeout_seconds, Value: '30' }
+      TargetType: ip
+      Tags:
+        - { Key: Name, Value: !Sub '${AWS::StackName}-lb-tg' }
+      VpcId:
+        Fn::ImportValue: infra-vpc-VpcId
+
+  # Sample backend in the VPC (Fargate)
+  Cluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub ${AWS::StackName}-cluster
+      Tags:
+        - { Key: Name, Value: !Sub '${AWS::StackName}-cluster' }
+
+  LogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      RetentionInDays: 30
+      LogGroupName: !Sub ${AWS::StackName}
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+          Action: sts:AssumeRole
+      RoleName: !Sub ${AWS::StackName}-task-execution-role
+      Path: /
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  TaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub ${AWS::StackName}-task-definition
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      Cpu: '256'
+      Memory: '512'
+      RequiresCompatibilities:
+        - FARGATE
+      NetworkMode: awsvpc
+      Tags:
+        - { Key: Name, Value: !Sub '${AWS::StackName}-be-taskdef' }
+      ContainerDefinitions:
+        - Name: nginx
+          Image: nginx
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-region: !Ref AWS::Region
+              awslogs-group: !Ref LogGroup
+              awslogs-stream-prefix: nginx
+          PortMappings:
+            - ContainerPort: 80
+
+  ServiceSg:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${AWS::StackName}-be-sg'
+      GroupDescription: !Sub Security group for ${AWS::StackName}-be
+      VpcId:
+        Fn::ImportValue: infra-vpc-VpcId
+      SecurityGroupIngress:
+        - { IpProtocol: '-1', SourceSecurityGroupId: !GetAtt AlbSg.GroupId, Description: 'Allow ALL traffic from ALB' }
+      Tags:
+        - { Key: Name, Value: !Sub '${AWS::StackName}-be-sg' }
+
+  Service:
+    Type: AWS::ECS::Service
+    DependsOn: AlbHttpListener
+    Properties:
+      Cluster: !Ref Cluster
+      DeploymentConfiguration:
+        MaximumPercent: 200
+        MinimumHealthyPercent: 100
+      DesiredCount: 1
+      EnableECSManagedTags: true
+      LaunchType: FARGATE
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !GetAtt ServiceSg.GroupId
+          Subnets:
+          - !ImportValue infra-vpc-sn-public-a
+          - !ImportValue infra-vpc-sn-public-b
+      LoadBalancers:
+        - ContainerName: nginx
+          ContainerPort: 80
+          TargetGroupArn: !Ref TargetGroup
+      TaskDefinition: !Ref TaskDefinition
+      PropagateTags: SERVICE
+      Tags:
+        - { Key: Name, Value: !Sub '${AWS::StackName}-be' }
+
+
+
+Outputs:
+  AlbHost:
+    Value: !GetAtt Alb.DNSName
+  AlbUrl1:
+    Value: !Sub 'http://${Alb.DNSName}'
+  AlbUrl2:
+    Value: !Sub 'https://${Alb.DNSName}'
