@@ -22,6 +22,8 @@ This repository contains a setup for experimenting with Amazon VPC Traffic Mirro
 
 Amazon VPC Traffic Mirroring allows you to mirror network traffic from an Elastic Network Interface (ENI) to another ENI (or a Network Load Balancer). See [AWS Documentation](https://docs.aws.amazon.com/vpc/latest/mirroring/what-is-traffic-mirroring.html) for additional information.
 
+**Note**: Amazon VPC Traffic Mirroring supports ENIs of instances running on top of the AWS Nitro System (e.g. t3, m5, c5 and r5 instances). You cannot mirror traffic from an ENI that is attached to a non-Nitro instance.
+
 The repository contains the following components (or CloudFormation stacks):
 
 * `vpc-mirroring-sample-service` - Sample service with a public ALB routing traffic to a Fargate backend for testing mirroring.
@@ -126,7 +128,9 @@ Once done, take a note of the ACM Certificate ARN and change the stack template 
 
 ### Mirror Filters for Application Load Balancers
 
-Amazon VPC Traffic Mirroring can mirror traffic from ENIs of Application Load Balancers. The VPC Mirroring template includes two mirror filters to mirror a portion of the ALB network traffic:
+Amazon VPC Traffic Mirroring can mirror traffic from ENIs of some Application Load Balancers (ALB). Amazon VPC Traffic Mirroring only supports instances that are built on the AWS Nitro System. You can mirror the traffic of an ALB if it uses a supported instance. ALBs are more likely to support mirroring on newer regions (like `eu-north-1`) that do not have non-Nitro based previous generation instances available. If the ALB is not using a supported instance, you cannot mirror its traffic.
+
+For supported ALBs, the VPC Mirroring template includes two mirror filters to mirror a portion of the ALB network traffic:
 
 * `MirrorAlbClientTraffic` - Mirrors all ingress and egress traffic between clients and the ALB. Traffic between the ALB and targets is not mirrored.
 * `MirrorAlbTargetTraffic` - Mirrors all ingress and egress traffic between the ALB and its targets. Traffic between clients and the ALB is not mirrored.
