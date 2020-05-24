@@ -80,7 +80,7 @@ make deploy-vpc-mirroring
 
 Once the stacks have been deployed, Amazon VPC starts to mirror traffic from the source ENI into the ENI of the target instance. To get started, log in to the target instance with Amazon SSM Session Manager.
 
-Amazon VPC mirrors the traffic from the source ENI into the target ENI port 4789 over UDP. Amazon VPC encapsulates the traffic with a VXLAN header. You can use the following commands to create a new VXLAN interface to receive the mirrored traffic ([reference](https://cloudshark.io/articles/aws-vpc-traffic-mirroring-cloud-packet-capture/):
+Amazon VPC mirrors the traffic from the source ENI into the target ENI port 4789 over UDP. Amazon VPC encapsulates the traffic with a VXLAN header. You can use the following commands to create a new VXLAN interface to receive the mirrored traffic ([reference](https://cloudshark.io/articles/aws-vpc-traffic-mirroring-cloud-packet-capture/)):
 
 ```
 # ip link add capture0 type vxlan id 12345 local 10.0.0.83 remote 10.0.0.84 dev eth0 dstport 4789
